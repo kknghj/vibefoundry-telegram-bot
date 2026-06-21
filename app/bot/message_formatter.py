@@ -17,7 +17,7 @@ def format_candidate_message(candidate: Candidate, preview: bool = False) -> str
         f"<b>{escape(prefix)}</b>",
         "",
         "<b>제목:</b>",
-        escape(candidate.title),
+        escape(_display_title(candidate)),
         "",
         "<b>출처:</b>",
         escape(source),
@@ -29,7 +29,7 @@ def format_candidate_message(candidate: Candidate, preview: bool = False) -> str
         escape(candidate.summary_ko or "요약 전 후보입니다."),
         "",
         "<b>무엇을 만든 것인가?</b>",
-        escape(candidate.project_name or candidate.service_name or candidate.title),
+        escape(candidate.service_name or candidate.project_name or candidate.title),
         "",
         "<b>어떤 문제를 해결하는가?</b>",
         escape(candidate.problem_solved_ko or "원문에 구체적 설명 없음."),
@@ -74,3 +74,9 @@ def _clip(value: str | None, limit: int) -> str:
     if not value or len(value) <= limit:
         return value or ""
     return value[: limit - 20].rstrip() + "..."
+
+
+def _display_title(candidate: Candidate) -> str:
+    if candidate.language != "ko" and candidate.service_name:
+        return candidate.service_name
+    return candidate.title

@@ -1,7 +1,6 @@
-from pathlib import Path
-import sys
+from _bootstrap import setup_script
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+setup_script()
 
 from app.bot.message_formatter import format_candidate_message
 from app.config import get_settings

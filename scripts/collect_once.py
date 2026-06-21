@@ -1,8 +1,8 @@
 import asyncio
-from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _bootstrap import setup_script
+
+setup_script()
 
 from app.config import get_settings
 from app.pipeline import collect_all

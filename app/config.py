@@ -23,6 +23,8 @@ class Settings:
     youtube_api_key: str | None
     product_hunt_token: str | None
     x_bearer_token: str | None
+    openai_api_key: str | None
+    openai_model: str
     gpters_rss_url: str | None
     geeknews_rss_url: str | None
     indie_hackers_rss_url: str | None
@@ -58,6 +60,8 @@ def get_settings() -> Settings:
         youtube_api_key=_optional("YOUTUBE_API_KEY"),
         product_hunt_token=_optional("PRODUCT_HUNT_TOKEN"),
         x_bearer_token=_optional("X_BEARER_TOKEN"),
+        openai_api_key=_optional("OPENAI_API_KEY"),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
         gpters_rss_url=_optional("GPTERS_RSS_URL"),
         geeknews_rss_url=_optional("GEEKNEWS_RSS_URL") or "https://news.hada.io/rss/news",
         indie_hackers_rss_url=_optional("INDIE_HACKERS_RSS_URL"),

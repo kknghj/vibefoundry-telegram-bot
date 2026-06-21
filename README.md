@@ -11,6 +11,7 @@
 - YouTube, Product Hunt, X는 API 키가 있을 때만 활성화
 - URL, 프로젝트명, 작성자+프로젝트 조합 기반 중복 방지
 - 최근 14일 카테고리 균형 반영
+- `OPENAI_API_KEY`가 있으면 외국어 원문을 자연스러운 한국어로 요약/번역
 - 원문 근거 없는 적용 아이디어 생성을 피하는 요약 포맷
 
 ## 설치
@@ -28,6 +29,15 @@ Copy-Item .env.example .env
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 ```
+
+자연스러운 한국어 번역을 사용하려면 다음 값도 설정하세요.
+
+```text
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+키가 없으면 로컬 fallback 요약을 사용하지만, 임의의 외국어 원문을 매끄럽게 번역하려면 API 키 설정을 권장합니다.
 
 ## DB 초기화
 
