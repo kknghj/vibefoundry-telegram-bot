@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+import json
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.collectors.base import RawItem
+from app.curation.classifier import classify_item
+from app.curation.scorer import score_candidate
+from app.storage.models import Candidate, CollectionRun, SentItem, Source
+from app.utils.text import canonicalize_url, detect_language, normalize_key, stable_hash
+from app.utils.time import utcnow
+
+
+def upsert_source(session: Session, name: str, source_type: str, enabled: bool = True, error: str | None = None) -> Source:
+    source = session.scalar(select(Source).where(Source.name == name))
+    if source is None:
+        source = Source(name=name, type=source_type, enabled=enabled)
+        session.add(source)
+    source.type = source_type
+    source.enabled = enabled
+    source.last_checked_at = utcnow()
+    if error:
+        source.last_error = error[:4000]
+    else:
+        source.last_success_at = utcnow()
+        source.last_error = None
+    return source
+
+
+def save_collection_run(
+    session: Session,
+    source_name: str,
+    status: str,
+    started_at: datetime,
+    fetched_count: int,
+    saved_count: int,
+    error_message: str | None = None,
+) -> None:
+    session.add(
+        CollectionRun(
+            source_name=source_name,
+            status=status,
+            started_at=started_at,
+            finished_at=utcnow(),
+            fetched_count=fetched_count,
+            saved_count=saved_count,
+            error_message=error_message,
+        )
+    )
+
+
+def candidate_exists(session: Session, source_name: str, external_id: str | None) -> bool:
+    if not external_id:
+        return False
+    return session.scalar(
+        select(Candidate.id).where(Candidate.source_name == source_name, Candidate.external_id == external_id)
+    ) is not None
+
+
+def save_raw_item(session: Session, item: RawItem, recent_categories: list[str] | None = None) -> Candidate | None:
+    if candidate_exists(session, item.source_name, item.external_id):
+        return None
+    canonical_url = canonicalize_url(item.source_url)
+    combined_text = f"{item.title}\n{item.raw_text}"
+    classification = classify_item(item.title, item.raw_text, item.source_name)
+    candidate = Candidate(
+        source_name=item.source_name,
+        source_url=item.source_url,
+        canonical_url=canonical_url,
+        title=item.title[:1000],
+        author=item.author,
+        project_name=classification.project_name,
+        service_name=classification.service_name,
+        raw_text=item.raw_text,
+        language=detect_language(combined_text),
+        published_at=item.published_at,
+        engagement_json=json.dumps(item.engagement, ensure_ascii=False),
+        category=classification.category,
+        priority_type=classification.priority_type,
+        tags_json=json.dumps(classification.tags, ensure_ascii=False),
+        status="rejected" if classification.reject_reason else "new",
+        reject_reason=classification.reject_reason,
+        external_id=item.external_id,
+    )
+    candidate.score = score_candidate(candidate, recent_categories or [])
+    session.add(candidate)
+    return candidate
+
+
+def recent_sent_categories(session: Session, days: int = 14) -> list[str]:
+    since = utcnow() - timedelta(days=days)
+    rows = session.scalars(select(SentItem.category).where(SentItem.sent_at >= since).order_by(SentItem.sent_at.desc())).all()
+    return [row for row in rows if row]
+
+
+def has_been_sent_today(session: Session, day_start_utc: datetime) -> SentItem | None:
+    return session.scalar(select(SentItem).where(SentItem.sent_at >= day_start_utc).order_by(SentItem.sent_at.desc()))
+
+
+def record_sent(session: Session, candidate: Candidate, message_text: str, telegram_message_id: str | None = None) -> SentItem:
+    project_key = normalize_key(candidate.project_name or candidate.service_name or candidate.title)
+    author_key = normalize_key(candidate.author)
+    sent = SentItem(
+        candidate_id=candidate.id,
+        message_text=message_text,
+        url_hash=stable_hash(candidate.canonical_url),
+        project_key=project_key,
+        author_project_key=f"{author_key}:{project_key}" if author_key and project_key else None,
+        category=candidate.category,
+        telegram_message_id=telegram_message_id,
+    )
+    candidate.status = "sent"
+    session.add(sent)
+    return sent
