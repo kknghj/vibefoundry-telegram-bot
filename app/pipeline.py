@@ -15,7 +15,7 @@ from app.collectors.x_api import XApiCollector
 from app.collectors.youtube import YouTubeCollector
 from app.config import Settings
 from app.curation.selector import select_next_candidate
-from app.curation.summarizer import enrich_candidate
+from app.curation.summarizer import enrich_candidate, is_delivery_ready, needs_translation_refresh
 from app.storage.models import Candidate
 from app.storage.repositories import recent_sent_categories, save_collection_run, save_raw_item, upsert_source
 from app.utils.time import utcnow
@@ -95,9 +95,17 @@ async def _collect_with_retry(collector, retries: int = 3):
 
 
 def prepare_next_candidate(session: Session) -> Candidate | None:
-    candidate = select_next_candidate(session)
-    if candidate is None:
-        return None
-    enrich_candidate(candidate)
-    session.commit()
-    return candidate
+    for _ in range(20):
+        candidate = select_next_candidate(session)
+        if candidate is None:
+            session.commit()
+            return None
+        enrich_candidate(candidate, force=needs_translation_refresh(candidate))
+        if is_delivery_ready(candidate):
+            session.commit()
+            return candidate
+        candidate.status = "rejected"
+        candidate.reject_reason = "한국어 번역 품질 검사 실패"
+        logger.warning("Rejected candidate %s due to Korean translation quality check", candidate.id)
+        session.commit()
+    return None

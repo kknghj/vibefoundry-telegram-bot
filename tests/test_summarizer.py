@@ -2,7 +2,8 @@ from app.curation.summarizer import enrich_candidate
 from app.storage.models import Candidate
 
 
-def test_english_subscription_case_gets_korean_fallback():
+def test_english_subscription_case_gets_korean_fallback(monkeypatch):
+    monkeypatch.setattr("app.curation.summarizer.translate_with_openai", lambda **kwargs: None)
     candidate = Candidate(
         source_name="reddit_sideproject",
         source_url="https://reddit.com/example",

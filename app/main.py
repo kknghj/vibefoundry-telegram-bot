@@ -7,6 +7,7 @@ from telegram.ext import Application, CommandHandler
 from app.bot.handlers import BotHandlers
 from app.config import get_settings
 from app.scheduler import build_scheduler
+from app.single_instance import acquire_lock
 from app.storage.db import create_session_factory
 from app.utils.logging import configure_logging
 
@@ -27,6 +28,7 @@ def main() -> None:
 
     settings = get_settings()
     configure_logging(settings)
+    acquire_lock()
     if not settings.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required to run the bot")
     session_factory = create_session_factory(settings)

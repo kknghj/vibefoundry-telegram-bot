@@ -47,12 +47,45 @@ def enrich_candidate(candidate: Candidate, force: bool = False) -> Candidate:
     return candidate
 
 
+def needs_translation_refresh(candidate: Candidate) -> bool:
+    if candidate.language == "ko":
+        return False
+    if not _has_korean_enrichment(candidate):
+        return True
+    fields = [
+        candidate.service_name or "",
+        candidate.summary_ko or "",
+        candidate.problem_solved_ko or "",
+        candidate.translation_ko or "",
+    ]
+    return _english_letter_ratio(" ".join(fields)) > 0.22
+
+
+def is_delivery_ready(candidate: Candidate) -> bool:
+    required = [candidate.summary_ko, candidate.problem_solved_ko, candidate.translation_ko]
+    if not all(required):
+        return False
+    if candidate.language == "ko":
+        return True
+    text = " ".join(
+        [
+            candidate.service_name or "",
+            candidate.summary_ko or "",
+            candidate.problem_solved_ko or "",
+            candidate.translation_ko or "",
+        ]
+    )
+    return bool(re.search(r"[가-힣]", text)) and _english_letter_ratio(text) <= 0.22
+
+
 def _has_korean_enrichment(candidate: Candidate) -> bool:
     fields = [candidate.summary_ko, candidate.problem_solved_ko, candidate.translation_ko]
     if not all(fields):
         return False
     joined = " ".join(fields)
-    return bool(re.search(r"[가-힣]", joined)) and "외국어 원문 핵심 내용 요약:" not in joined
+    if "외국어 원문 핵심 내용 요약:" in joined:
+        return False
+    return bool(re.search(r"[가-힣]", joined)) and _english_letter_ratio(joined) <= 0.22
 
 
 def _summary(title: str, text: str) -> str:
@@ -122,8 +155,14 @@ def _translation(language: str | None, title: str, text: str) -> str:
         )
     if text:
         clean = _remove_reddit_boilerplate(text)
-        sentences = _split_sentences(clean)[:4]
-        return "원문은 작성자가 직접 만든 프로젝트나 사례를 설명한다. " + " ".join(_soft_paraphrase(sentence) for sentence in sentences)
+        keywords = _extract_keywords(clean)
+        if keywords:
+            return (
+                "원문은 작성자가 직접 만든 프로젝트 사례를 설명한다. "
+                f"확인되는 핵심 단서는 {', '.join(keywords)}이다. "
+                "자세한 자연어 번역은 OPENAI_API_KEY를 통한 번역 생성이 성공해야 제공된다."
+            )
+        return "원문은 외국어로 된 프로젝트 사례를 설명하지만, 로컬 fallback만으로는 충분한 상세 번역을 만들 수 없다."
     return "수집된 본문이 짧아 제목과 출처 중심으로만 확인할 수 있다."
 
 
@@ -136,21 +175,27 @@ def _remove_reddit_boilerplate(text: str) -> str:
     return re.sub(r"From the .*? community on Reddit:.*", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
 
 
-def _split_sentences(text: str) -> list[str]:
-    return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+def _english_letter_ratio(text: str) -> float:
+    letters = re.findall(r"[A-Za-z]", text or "")
+    korean = re.findall(r"[가-힣]", text or "")
+    total = len(letters) + len(korean)
+    if total == 0:
+        return 0.0
+    return len(letters) / total
 
 
-def _soft_paraphrase(sentence: str) -> str:
-    sentence = sentence.strip()
-    replacements = {
-        "I built": "작성자는 만들었다고 설명한다:",
-        "We built": "작성자들은 만들었다고 설명한다:",
-        "A few months ago": "몇 달 전",
-        "The damage": "확인해 보니 문제는 다음과 같았다",
-        "Nobody owned the full picture": "전체 상황을 한눈에 파악하는 사람이 없었다",
-    }
-    for source, target in replacements.items():
-        sentence = sentence.replace(source, target)
-    if re.search(r"[A-Za-z]{4,}", sentence):
-        return f"원문 내용: {sentence}"
-    return sentence
+def _extract_keywords(text: str) -> list[str]:
+    lowered = text.lower()
+    pairs = [
+        ("batch", "일괄 처리"),
+        ("media", "미디어 파일"),
+        ("optimizer", "최적화 도구"),
+        ("low-spec pc", "저사양 PC"),
+        ("audio", "오디오"),
+        ("images", "이미지"),
+        ("videos", "영상"),
+        ("ffmpeg", "FFmpeg"),
+        ("tester", "테스터 모집"),
+    ]
+    found = [label for needle, label in pairs if needle in lowered]
+    return list(dict.fromkeys(found))[:5]

@@ -1,9 +1,11 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.pytest_tmp/
 *.py[cod]
 
 .env
 data/*.db
 data/*.sqlite
+data/bot.lock
 data/logs/*.log
