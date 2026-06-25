@@ -15,17 +15,22 @@ logger = logging.getLogger(__name__)
 
 class RssCollector:
     source_type = "rss"
+    user_agent = "telegram-ai-news-bot/0.1"
 
     def __init__(self, source_name: str, feed_url: str, limit: int = 20):
         self.source_name = source_name
         self.feed_url = feed_url
         self.limit = limit
 
+    async def fetch_feed_text(self, client: httpx.AsyncClient) -> str:
+        response = await client.get(self.feed_url, headers={"User-Agent": self.user_agent})
+        response.raise_for_status()
+        return response.text
+
     async def collect(self) -> list[RawItem]:
         async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-            response = await client.get(self.feed_url, headers={"User-Agent": "telegram-ai-news-bot/0.1"})
-            response.raise_for_status()
-        parsed = feedparser.parse(response.text)
+            feed_text = await self.fetch_feed_text(client)
+        parsed = feedparser.parse(feed_text)
         items: list[RawItem] = []
         for entry in parsed.entries[: self.limit]:
             link = entry.get("link") or ""

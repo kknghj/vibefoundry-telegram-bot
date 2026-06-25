@@ -96,6 +96,20 @@ def recent_sent_categories(session: Session, days: int = 14) -> list[str]:
     return [row for row in rows if row]
 
 
+def rescore_active_candidates(session: Session, recent_categories: list[str] | None = None) -> dict[str, int]:
+    recent = recent_categories or recent_sent_categories(session)
+    candidates = session.scalars(
+        select(Candidate).where(Candidate.status.in_(["new", "shortlisted", "selected"]))
+    ).all()
+    updated = 0
+    for candidate in candidates:
+        new_score = score_candidate(candidate, recent)
+        if candidate.score != new_score:
+            candidate.score = new_score
+            updated += 1
+    return {"total": len(candidates), "updated": updated}
+
+
 def has_been_sent_today(session: Session, day_start_utc: datetime) -> SentItem | None:
     return session.scalar(select(SentItem).where(SentItem.sent_at >= day_start_utc).order_by(SentItem.sent_at.desc()))
 

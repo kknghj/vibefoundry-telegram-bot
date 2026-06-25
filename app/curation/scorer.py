@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import math
 
 from app.storage.models import Candidate
 from app.utils.time import utcnow
+
+MAX_ENGAGEMENT_POINTS = 40
+SCORE_CAP = 150
 
 PRIORITY_POINTS = {
     "공개서비스": 30,
@@ -29,10 +33,10 @@ def score_candidate(candidate: Candidate, recent_categories: list[str]) -> float
         score += 15
     if len(candidate.raw_text or "") > 140:
         score += 10
-    score += min(_engagement_points(candidate.engagement_json), 15)
+    score += min(_engagement_points(candidate.engagement_json), MAX_ENGAGEMENT_POINTS)
     score += _freshness_points(candidate.published_at)
     score += category_balance_adjustment(candidate.category, recent_categories)
-    return round(max(min(score, 100), -100), 2)
+    return round(max(min(score, SCORE_CAP), -100), 2)
 
 
 def category_balance_adjustment(category: str | None, recent_categories: list[str]) -> float:
@@ -57,6 +61,23 @@ def least_recent_category(recent_categories: list[str]) -> str:
     return max(positions, key=positions.get)
 
 
+def _engagement_total(data: dict) -> float:
+    total = 0.0
+    for key in ["votes", "likes", "like_count", "ups", "retweet_count", "quote_count", "bookmark_count"]:
+        value = data.get(key)
+        if isinstance(value, int | float) and value > 0:
+            total += value
+    if "ups" not in data:
+        reddit_score = data.get("score")
+        if isinstance(reddit_score, int | float) and reddit_score > 0:
+            total += reddit_score
+    for key in ["comments", "comment_count", "num_comments", "reply_count"]:
+        value = data.get(key)
+        if isinstance(value, int | float) and value > 0:
+            total += value * 2
+    return total
+
+
 def _engagement_points(raw: str | None) -> float:
     if not raw:
         return 0
@@ -64,23 +85,11 @@ def _engagement_points(raw: str | None) -> float:
         data = json.loads(raw)
     except json.JSONDecodeError:
         return 0
-    total = 0
-    for key in ["votes", "likes", "like_count", "ups", "score"]:
-        value = data.get(key)
-        if isinstance(value, int | float):
-            total += value
-    comments = data.get("comments") or data.get("comment_count") or data.get("num_comments")
-    if isinstance(comments, int | float):
-        total += comments * 2
+    total = _engagement_total(data)
     if total <= 0:
         return 0
-    if total >= 500:
-        return 15
-    if total >= 100:
-        return 10
-    if total >= 20:
-        return 6
-    return 3
+    points = math.log10(total + 1) * 8
+    return min(round(points, 2), MAX_ENGAGEMENT_POINTS)
 
 
 def _freshness_points(published_at: datetime | None) -> float:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import httpx
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.collectors.geeknews import GeekNewsCollector
@@ -88,6 +89,13 @@ async def _collect_with_retry(collector, retries: int = 3):
     for attempt in range(retries):
         try:
             return await collector.collect()
+        except httpx.HTTPStatusError as exc:
+            last_error = exc
+            if exc.response.status_code == 429:
+                retry_after = int(exc.response.headers.get("Retry-After", 30 * (attempt + 1)))
+                await asyncio.sleep(retry_after)
+                continue
+            await asyncio.sleep(2 * (attempt + 1))
         except Exception as exc:
             last_error = exc
             await asyncio.sleep(2 * (attempt + 1))

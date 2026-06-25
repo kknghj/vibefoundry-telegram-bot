@@ -18,7 +18,7 @@ class ProductHuntCollector:
     async def collect(self) -> list[RawItem]:
         query = """
         query Posts($first: Int!) {
-          posts(first: $first, order: NEWEST) {
+          posts(first: $first, order: RANKING) {
             edges {
               node {
                 id
