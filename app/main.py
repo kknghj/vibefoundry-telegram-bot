@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler
 
 from app.bot.handlers import BotHandlers
 from app.config import get_settings
-from app.scheduler import build_scheduler
+from app.scheduler import build_scheduler, catch_up_if_missed
 from app.single_instance import acquire_lock
 from app.storage.db import create_session_factory
 from app.utils.logging import configure_logging
@@ -17,6 +17,12 @@ logger = logging.getLogger(__name__)
 
 async def start_scheduler(application) -> None:
     application.bot_data["scheduler"].start()
+    result = await catch_up_if_missed(
+        application.bot_data["settings"],
+        application.bot_data["session_factory"],
+        on_exhausted=application.bot_data.get("on_exhausted"),
+    )
+    logger.info("Startup catch-up result: %s", result)
 
 
 async def stop_scheduler(application) -> None:
@@ -51,6 +57,9 @@ def main() -> None:
 
     scheduler = build_scheduler(settings, session_factory, on_exhausted=on_exhausted)
     application.bot_data["scheduler"] = scheduler
+    application.bot_data["settings"] = settings
+    application.bot_data["session_factory"] = session_factory
+    application.bot_data["on_exhausted"] = on_exhausted
     application.add_handler(CommandHandler("today", handlers.today))
     application.add_handler(CommandHandler("next", handlers.next))
     application.add_handler(CommandHandler("sources", handlers.sources))
