@@ -6,60 +6,35 @@ import logging
 import httpx
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.collectors.geeknews import GeekNewsCollector
 from app.collectors.gpters import GptersCollector
-from app.collectors.indie_hackers import IndieHackersCollector
-from app.collectors.manual_queue import ManualQueueCollector
-from app.collectors.product_hunt import ProductHuntCollector
-from app.collectors.reddit import RedditRssCollector
-from app.collectors.x_api import XApiCollector
-from app.collectors.youtube import YouTubeCollector
 from app.config import Settings
-from app.curation.selector import select_next_candidate
+from app.curation.selector import select_random_gpters_candidate
 from app.curation.summarizer import enrich_candidate, is_delivery_ready, needs_translation_refresh
 from app.storage.models import Candidate
-from app.storage.repositories import recent_sent_categories, save_collection_run, save_raw_item, upsert_source
+from app.storage.repositories import save_collection_run, save_raw_item, upsert_source
 from app.utils.time import utcnow
 
 logger = logging.getLogger(__name__)
 
+QUEUE_EXHAUSTED_MESSAGE = (
+    "알림할 지피터스 사례글이 모두 소진되었습니다. "
+    "지정한 작성자·기간 조건을 만족하는 미발송 게시글이 없어 봇을 종료합니다."
+)
 
-def build_collectors(settings: Settings, session: Session):
-    collectors = [
-        ManualQueueCollector(session),
-        RedditRssCollector("SideProject"),
-        RedditRssCollector("indiehackers"),
-        RedditRssCollector("ChatGPTCoding"),
+
+def build_collectors(settings: Settings):
+    return [
+        GptersCollector(
+            authors=list(settings.gpters_authors),
+            published_after=settings.gpters_published_after,
+        )
     ]
-    if settings.geeknews_rss_url:
-        collectors.append(GeekNewsCollector(settings.geeknews_rss_url))
-    if settings.gpters_rss_url:
-        collectors.append(GptersCollector(settings.gpters_rss_url))
-    if settings.indie_hackers_rss_url:
-        collectors.append(IndieHackersCollector(settings.indie_hackers_rss_url))
-    if settings.youtube_api_key:
-        collectors.append(YouTubeCollector(settings.youtube_api_key))
-    if settings.product_hunt_token:
-        collectors.append(ProductHuntCollector(settings.product_hunt_token))
-    if settings.x_bearer_token:
-        collectors.append(XApiCollector(settings.x_bearer_token))
-    return collectors
 
 
 async def collect_all(settings: Settings, session_factory: sessionmaker[Session]) -> int:
     total_saved = 0
     with session_factory() as session:
-        collectors = build_collectors(settings, session)
-        recent_categories = recent_sent_categories(session)
-        configured_names = {collector.source_name for collector in collectors}
-        for source_name, source_type, enabled in [
-            ("youtube", "api", bool(settings.youtube_api_key)),
-            ("product_hunt", "api", bool(settings.product_hunt_token)),
-            ("x", "api", bool(settings.x_bearer_token)),
-        ]:
-            if source_name not in configured_names:
-                upsert_source(session, source_name, source_type, enabled=False, error="API 토큰이 없어 비활성화됨")
-        session.commit()
+        collectors = build_collectors(settings)
         for collector in collectors:
             started = utcnow()
             fetched = 0
@@ -68,7 +43,7 @@ async def collect_all(settings: Settings, session_factory: sessionmaker[Session]
                 items = await _collect_with_retry(collector)
                 fetched = len(items)
                 for item in items:
-                    candidate = save_raw_item(session, item, recent_categories)
+                    candidate = save_raw_item(session, item, force_accept=True)
                     if candidate is not None:
                         saved += 1
                 upsert_source(session, collector.source_name, collector.source_type, enabled=True)
@@ -102,15 +77,22 @@ async def _collect_with_retry(collector, retries: int = 3):
     raise last_error or RuntimeError("unknown collector error")
 
 
-def prepare_next_candidate(session: Session) -> Candidate | None:
-    for _ in range(20):
-        candidate = select_next_candidate(session)
+def prepare_next_candidate(session: Session, settings: Settings) -> Candidate | None:
+    attempts = 0
+    exclude_ids: set[int] = set()
+    while attempts < 20:
+        attempts += 1
+        candidate = select_random_gpters_candidate(
+            session,
+            authors=settings.gpters_authors,
+            published_after=settings.gpters_published_after,
+            exclude_ids=exclude_ids,
+        )
         if candidate is None:
-            session.commit()
             return None
+        exclude_ids.add(candidate.id)
         enrich_candidate(candidate, force=needs_translation_refresh(candidate))
         if is_delivery_ready(candidate):
-            session.commit()
             return candidate
         candidate.status = "rejected"
         candidate.reject_reason = "한국어 번역 품질 검사 실패"

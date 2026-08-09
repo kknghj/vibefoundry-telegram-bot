@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from telegram.ext import Application, CommandHandler
 
@@ -10,6 +11,8 @@ from app.scheduler import build_scheduler
 from app.single_instance import acquire_lock
 from app.storage.db import create_session_factory
 from app.utils.logging import configure_logging
+
+logger = logging.getLogger(__name__)
 
 
 async def start_scheduler(application) -> None:
@@ -33,7 +36,7 @@ def main() -> None:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required to run the bot")
     session_factory = create_session_factory(settings)
     handlers = BotHandlers(settings, session_factory)
-    scheduler = build_scheduler(settings, session_factory)
+
     application = (
         Application.builder()
         .token(settings.telegram_bot_token)
@@ -41,6 +44,12 @@ def main() -> None:
         .post_shutdown(stop_scheduler)
         .build()
     )
+
+    async def on_exhausted() -> None:
+        logger.info("Stopping application after GPTERS queue exhaustion")
+        application.stop_running()
+
+    scheduler = build_scheduler(settings, session_factory, on_exhausted=on_exhausted)
     application.bot_data["scheduler"] = scheduler
     application.add_handler(CommandHandler("today", handlers.today))
     application.add_handler(CommandHandler("next", handlers.next))

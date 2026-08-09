@@ -1,18 +1,15 @@
-# Telegram AI News Bot
+# Telegram GPTERS Case Digest Bot
 
-매일 오전 8시 텔레그램으로 AI 활용 사례 또는 바이브코딩 사례 1건을 보내는 Python MVP입니다.
+매일 아침 8시, 저녁 8시에 지피터스 사례글 1건을 텔레그램으로 보내는 Python 봇입니다.
 
-## 주요 기능
+## 발송 범위
 
-- Telegram Bot API 발송 및 `/today`, `/next`, `/sources` 명령
-- APScheduler 기반 매일 오전 8시 자동 실행
-- SQLite 저장소
-- Reddit RSS, GeekNews RSS, 수동 큐 기본 지원
-- YouTube, Product Hunt, X는 API 키가 있을 때만 활성화
-- URL, 프로젝트명, 작성자+프로젝트 조합 기반 중복 방지
-- 최근 14일 카테고리 균형 반영
-- `OPENAI_API_KEY`가 있으면 외국어 원문을 자연스러운 한국어로 요약/번역
-- 원문 근거 없는 적용 아이디어 생성을 피하는 요약 포맷
+- 소스: 지피터스 사례글
+- 작성일: `2026-07-20` 이후
+- 작성자: `자연어회계처리`, `유피테르`, `벤쿠버쪼`, `이생강`, `Giacomo`, `망원궁예`
+- 선택: 최신순이 아니라 미발송 글 중 랜덤 1건
+- 중복 발송 방지
+- 미발송 글이 모두 소진되면 안내 메시지를 보내고 봇 종료
 
 ## 설치
 
@@ -29,15 +26,6 @@ Copy-Item .env.example .env
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 ```
-
-자연스러운 한국어 번역을 사용하려면 다음 값도 설정하세요.
-
-```text
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-4.1-mini
-```
-
-키가 없으면 로컬 fallback 요약을 사용하지만, 임의의 외국어 원문을 매끄럽게 번역하려면 API 키 설정을 권장합니다.
 
 ## DB 초기화
 
@@ -57,7 +45,7 @@ python scripts/collect_once.py
 python scripts/preview_next.py
 ```
 
-## 오늘 사례 발송
+## 지금 1건 발송
 
 ```powershell
 python scripts/run_once.py
@@ -69,8 +57,12 @@ python scripts/run_once.py
 python -m app.main
 ```
 
-## 운영 메모
+## 주요 설정
 
-- X는 공식 API 토큰이 있을 때만 사용합니다. 우회 스크래핑은 구현하지 않았습니다.
-- API 키가 없는 소스는 비활성화 상태로 기록됩니다.
-- 원문에 구현 방식이 없으면 메시지에 `원문에 구체적 설명 없음`으로 표시합니다.
+```text
+SEND_HOURS=8,20
+SEND_MINUTE=0
+GPTERS_AUTHORS=자연어회계처리,유피테르,벤쿠버쪼,이생강,Giacomo,망원궁예
+GPTERS_PUBLISHED_AFTER=2026-07-20
+TIMEZONE=Asia/Seoul
+```

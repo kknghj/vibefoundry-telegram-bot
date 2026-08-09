@@ -1,24 +1,48 @@
-from app.curation.selector import select_next_candidate
+from datetime import datetime, timezone
+
+from app.curation.selector import select_random_gpters_candidate
 from app.storage.models import Candidate
 
 
-def test_selector_picks_highest_non_duplicate(session):
-    low = Candidate(
-        source_name="manual",
-        source_url="https://example.com/low",
-        canonical_url="https://example.com/low",
-        title="Low",
+def test_selector_picks_eligible_gpters_author_randomly(session):
+    cutoff = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    eligible = Candidate(
+        source_name="gpters",
+        source_url="https://www.gpters.org/nocode/post/eligible",
+        canonical_url="https://www.gpters.org/nocode/post/eligible",
+        title="Eligible",
+        author="유피테르",
+        published_at=datetime(2026, 7, 21, tzinfo=timezone.utc),
         score=10,
         status="new",
     )
-    high = Candidate(
-        source_name="manual",
-        source_url="https://example.com/high",
-        canonical_url="https://example.com/high",
-        title="High",
+    too_old = Candidate(
+        source_name="gpters",
+        source_url="https://www.gpters.org/nocode/post/old",
+        canonical_url="https://www.gpters.org/nocode/post/old",
+        title="Old",
+        author="유피테르",
+        published_at=datetime(2026, 7, 19, tzinfo=timezone.utc),
         score=90,
         status="new",
     )
-    session.add_all([low, high])
+    other_author = Candidate(
+        source_name="gpters",
+        source_url="https://www.gpters.org/nocode/post/other",
+        canonical_url="https://www.gpters.org/nocode/post/other",
+        title="Other",
+        author="다른사람",
+        published_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        score=90,
+        status="new",
+    )
+    session.add_all([eligible, too_old, other_author])
     session.commit()
-    assert select_next_candidate(session).title == "High"
+
+    selected = select_random_gpters_candidate(
+        session,
+        authors=["유피테르"],
+        published_after=cutoff,
+    )
+    assert selected is not None
+    assert selected.title == "Eligible"

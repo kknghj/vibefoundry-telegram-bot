@@ -11,13 +11,17 @@ SAFE_LIMIT = 3800
 
 def format_candidate_message(candidate: Candidate, preview: bool = False) -> str:
     tags = _tags(candidate.tags_json)
-    prefix = "🔎 다음 후보 미리보기" if preview else "🚀 오늘의 바이브코딩 사례"
+    prefix = "🔎 다음 후보 미리보기" if preview else "📬 지피터스 사례글"
     source = candidate.source_name.replace("_", " / ")
+    author = candidate.author or "작성자 미상"
     parts = [
         f"<b>{escape(prefix)}</b>",
         "",
         "<b>제목:</b>",
         escape(_display_title(candidate)),
+        "",
+        "<b>작성자:</b>",
+        escape(author),
         "",
         "<b>출처:</b>",
         escape(source),
@@ -49,7 +53,7 @@ def format_candidate_message(candidate: Candidate, preview: bool = False) -> str
     message = "\n".join(parts)
     if len(message) <= SAFE_LIMIT:
         return message
-    short_parts = parts[:25] + [
+    short_parts = parts[:29] + [
         "",
         "<b>상세 번역:</b>",
         escape(_clip(candidate.translation_ko, 700) or "길이 제한으로 상세 번역을 압축했다."),
@@ -62,12 +66,12 @@ def format_candidate_message(candidate: Candidate, preview: bool = False) -> str
 
 def _tags(raw: str | None) -> list[str]:
     if not raw:
-        return ["#AI활용", "#바이브코딩"]
+        return ["#지피터스", "#사례글"]
     try:
         parsed = json.loads(raw)
-        return parsed if isinstance(parsed, list) and parsed else ["#AI활용", "#바이브코딩"]
+        return parsed if isinstance(parsed, list) and parsed else ["#지피터스", "#사례글"]
     except json.JSONDecodeError:
-        return ["#AI활용", "#바이브코딩"]
+        return ["#지피터스", "#사례글"]
 
 
 def _clip(value: str | None, limit: int) -> str:

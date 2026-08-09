@@ -60,32 +60,79 @@ def candidate_exists(session: Session, source_name: str, external_id: str | None
     ) is not None
 
 
-def save_raw_item(session: Session, item: RawItem, recent_categories: list[str] | None = None) -> Candidate | None:
-    if candidate_exists(session, item.source_name, item.external_id):
-        return None
+def save_raw_item(
+    session: Session,
+    item: RawItem,
+    recent_categories: list[str] | None = None,
+    *,
+    force_accept: bool = False,
+) -> Candidate | None:
+    existing = session.scalar(
+        select(Candidate).where(Candidate.source_name == item.source_name, Candidate.external_id == item.external_id)
+    )
     canonical_url = canonicalize_url(item.source_url)
     combined_text = f"{item.title}\n{item.raw_text}"
-    classification = classify_item(item.title, item.raw_text, item.source_name)
+    if force_accept:
+        classification = classify_item(item.title, item.raw_text, item.source_name)
+        category = classification.category if not classification.reject_reason else "바이브코딩서비스"
+        priority_type = classification.priority_type if not classification.reject_reason else "개인프로젝트"
+        tags = classification.tags if not classification.reject_reason else ["#지피터스", "#사례글"]
+        project_name = classification.project_name
+        service_name = classification.service_name
+        status = "new"
+        reject_reason = None
+    else:
+        classification = classify_item(item.title, item.raw_text, item.source_name)
+        category = classification.category
+        priority_type = classification.priority_type
+        tags = classification.tags
+        project_name = classification.project_name
+        service_name = classification.service_name
+        status = "rejected" if classification.reject_reason else "new"
+        reject_reason = classification.reject_reason
+
+    if existing is not None:
+        if existing.status == "sent":
+            return None
+        existing.source_url = item.source_url
+        existing.canonical_url = canonical_url
+        existing.title = item.title[:1000]
+        existing.author = item.author
+        existing.project_name = project_name
+        existing.service_name = service_name or existing.service_name
+        existing.raw_text = item.raw_text
+        existing.language = detect_language(combined_text)
+        existing.published_at = item.published_at
+        existing.engagement_json = json.dumps(item.engagement, ensure_ascii=False)
+        existing.category = category
+        existing.priority_type = priority_type
+        existing.tags_json = json.dumps(tags, ensure_ascii=False)
+        if force_accept or existing.status == "rejected":
+            existing.status = status
+            existing.reject_reason = reject_reason
+        existing.score = 50.0 if force_accept else score_candidate(existing, recent_categories or [])
+        return existing
+
     candidate = Candidate(
         source_name=item.source_name,
         source_url=item.source_url,
         canonical_url=canonical_url,
         title=item.title[:1000],
         author=item.author,
-        project_name=classification.project_name,
-        service_name=classification.service_name,
+        project_name=project_name,
+        service_name=service_name,
         raw_text=item.raw_text,
         language=detect_language(combined_text),
         published_at=item.published_at,
         engagement_json=json.dumps(item.engagement, ensure_ascii=False),
-        category=classification.category,
-        priority_type=classification.priority_type,
-        tags_json=json.dumps(classification.tags, ensure_ascii=False),
-        status="rejected" if classification.reject_reason else "new",
-        reject_reason=classification.reject_reason,
+        category=category,
+        priority_type=priority_type,
+        tags_json=json.dumps(tags, ensure_ascii=False),
+        status=status,
+        reject_reason=reject_reason,
         external_id=item.external_id,
     )
-    candidate.score = score_candidate(candidate, recent_categories or [])
+    candidate.score = 50.0 if force_accept else score_candidate(candidate, recent_categories or [])
     session.add(candidate)
     return candidate
 
@@ -112,6 +159,10 @@ def rescore_active_candidates(session: Session, recent_categories: list[str] | N
 
 def has_been_sent_today(session: Session, day_start_utc: datetime) -> SentItem | None:
     return session.scalar(select(SentItem).where(SentItem.sent_at >= day_start_utc).order_by(SentItem.sent_at.desc()))
+
+
+def has_been_sent_since(session: Session, since_utc: datetime) -> SentItem | None:
+    return session.scalar(select(SentItem).where(SentItem.sent_at >= since_utc).order_by(SentItem.sent_at.desc()))
 
 
 def record_sent(session: Session, candidate: Candidate, message_text: str, telegram_message_id: str | None = None) -> SentItem:

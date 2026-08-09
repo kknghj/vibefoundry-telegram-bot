@@ -12,7 +12,7 @@ if __name__ == "__main__":
     settings = get_settings()
     factory = create_session_factory(settings)
     with factory() as session:
-        candidate = prepare_next_candidate(session)
+        candidate = prepare_next_candidate(session, settings)
         if candidate is None:
             print("No candidate available")
         else:
