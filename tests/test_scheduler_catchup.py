@@ -1,8 +1,9 @@
 from datetime import datetime
+import asyncio
 from zoneinfo import ZoneInfo
 
 from app.config import Settings
-from app.scheduler import latest_due_slot
+from app.scheduler import build_scheduler, latest_due_slot
 
 
 def _settings(**overrides) -> Settings:
@@ -49,3 +50,20 @@ def test_latest_due_slot_exactly_on_schedule():
     now = datetime(2026, 8, 9, 20, 0, tzinfo=ZoneInfo("Asia/Seoul"))
     slot = latest_due_slot(settings, now)
     assert slot == datetime(2026, 8, 9, 20, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+
+
+def test_scheduler_runs_a_missed_job_once_after_long_suspend():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    scheduler = build_scheduler(_settings(), session_factory=object())
+    try:
+        scheduler.start(paused=True)
+        job = scheduler.get_job("gpters_case_digest")
+
+        assert job.misfire_grace_time is None
+        assert job.coalesce is True
+    finally:
+        if scheduler.running:
+            scheduler.shutdown(wait=False)
+        loop.run_until_complete(asyncio.sleep(0))
+        loop.close()

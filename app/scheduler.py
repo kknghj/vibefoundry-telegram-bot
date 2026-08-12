@@ -60,6 +60,11 @@ def build_scheduler(
         args=[settings, session_factory, on_exhausted],
         id="gpters_case_digest",
         replace_existing=True,
+        # Suspend pauses asyncio's monotonic timer. Run the latest missed slot
+        # after resume instead of dropping it, and coalesce multiple missed slots
+        # into one delivery (the DB window check still prevents duplicates).
+        misfire_grace_time=None,
+        coalesce=True,
     )
     return scheduler
 
