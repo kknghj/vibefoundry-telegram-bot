@@ -16,3 +16,7 @@ def configure_logging(settings: Settings) -> None:
             logging.FileHandler(log_dir / "app.log", encoding="utf-8"),
         ],
     )
+    # httpx logs full request URLs at INFO. Telegram embeds the bot token in
+    # that URL, so keep transport logs at WARNING while retaining app INFO logs.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
